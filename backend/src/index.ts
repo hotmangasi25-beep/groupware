@@ -16,5 +16,5 @@ app.get("/teachers", async (_req, res) => {
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`Backend running at http://localhost:${PORT}`);
+  console.log(`Backends running at http://localhost:${PORT}`);
 });
