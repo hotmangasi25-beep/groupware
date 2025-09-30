@@ -1,18 +1,13 @@
 import express from "express";
-import dotenv from "dotenv";
-import cors from "cors";
-import { db } from "./db";
-import { teachers } from "./schema";
+import authRoutes from "./app/routes/authRoutes";
 
-dotenv.config();
 const app = express();
-app.use(cors());
+
 app.use(express.json());
 
-app.get("/teachers", async (_req, res) => {
-  const all = await db.select().from(teachers);
-  res.json(all);
-});
+// prefix: /api/auth
+
+app.use("/api/auth", authRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
