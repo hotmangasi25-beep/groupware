@@ -22,7 +22,7 @@ export const login = async (req: Request, res: Response) => {
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { nip, email, fullName, phoneNumber, password } = req.body;
+    const { nip, email, fullName, gender, avatarUrl, signatureUrl, phoneNumber, password } = req.body;
 
     const result = await authService.register({
       nip,
@@ -30,6 +30,9 @@ export const register = async (req: Request, res: Response) => {
       fullName,
       phoneNumber,
       password,
+      gender,
+      avatarUrl,
+      signatureUrl,
     });
 
     res.status(201).json({

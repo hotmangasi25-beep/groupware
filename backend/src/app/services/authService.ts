@@ -12,6 +12,9 @@ export const register = async (userData: {
   fullName: string;
   phoneNumber: string;
   password: string;
+  gender: string;
+  avatarUrl: string;
+  signatureUrl: string;
 }) => {
   // cek apakah user sudah ada
   const existingUser = await userRepository.findByNIP(userData.nip);
@@ -35,9 +38,9 @@ export const register = async (userData: {
     password: hashedPassword,
     metaToken: null, // default
     bornDate: null,
-    gender: null,
-    avatarUrl: null,
-    signatureUrl: null,
+    gender: userData.gender,
+    avatarUrl: userData.avatarUrl,
+    signatureUrl: userData.signatureUrl,
   });
 
   // buat token JWT
