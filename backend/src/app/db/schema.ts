@@ -23,7 +23,9 @@ export type UserRole = typeof userRoleEnum.enumValues[number];
 export const memoStatusEnum = pgEnum("memo_status", [
   "DRAFT",
   "SUBMITTED_TO_CHECKER",
+  "REVISED_BY_CHECKER",
   "SUBMITTED_TO_APPROVER",
+  "REVISED_BY_APPROVER",
   "CHECKED",
   "REJECTED_BY_CHECKER",
   "REJECTED_BY_APPROVER",
@@ -42,8 +44,9 @@ export const memoActionEnum = pgEnum("memo_action_type", [
   "REJECT",
   "ARCHIVE",
   "UNARCHIVE",
+  "REVISE", // tambahan untuk revisi memo antar level
 ]);
-export type MemoActionType = typeof memoActionEnum.enumValues[number];
+// export type MemoActionType = typeof memoActionEnum.enumValues[number];
 
 //
 // =======================================================
@@ -67,22 +70,61 @@ export const users = pgTable("users", {
 
 //
 // =======================================================
-// MEMOS TABLE
+// GROUPS TABLE (untuk penerima grup, misal: semua guru)
 // =======================================================
 //
-export const memos = pgTable("memos", {
+export const groups = pgTable("groups", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  title: varchar("title", { length: 255 }).notNull(),
-  content: text("content").notNull(),
-  makerId: integer("maker_id").notNull().references(() => users.id),
-  checkerId: integer("checker_id").references(() => users.id),
-  approverId: integer("approver_id").references(() => users.id),
-  status: memoStatusEnum("status").default("DRAFT"),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-  submittedAt: timestamp("submitted_at"),
-  approvedAt: timestamp("approved_at"),
 });
+
+export const groupMembers = pgTable("group_members", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  groupId: integer("group_id").notNull().references(() => groups.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+});
+
+//
+// =======================================================
+// MEMOS TABLE (self-reference via function factory)
+// =======================================================
+//
+
+export const createMemosTable = () =>
+  pgTable("memos", {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    title: varchar("title", { length: 255 }).notNull(),
+    content: text("content").notNull(),
+
+    // relasi user terkait
+    makerId: integer("maker_id").notNull().references(() => users.id),
+    checkerId: integer("checker_id").references(() => users.id),
+    approverId: integer("approver_id").references(() => users.id),
+
+    // status & workflow
+    status: memoStatusEnum("status").default("DRAFT"),
+    currentHandlerId: integer("current_handler_id").references(() => users.id),
+
+    // metadata
+    memoNumber: varchar("memo_number", { length: 50 }),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    submittedAt: timestamp("submitted_at"),
+    approvedAt: timestamp("approved_at"),
+
+    // parent memo reference (diisi setelah deklarasi)
+    parentMemoId: integer("parent_memo_id"),
+  });
+
+// buat instance tabel
+export const memos = createMemosTable();
+
+// setelah memos terdefinisi, kita update relasi parentMemoId agar punya reference valid
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error - TypeScript tidak mengenali late binding tetapi ini aman di runtime
+memos.parentMemoId = integer("parent_memo_id").references(() => memos.id);
 
 //
 // =======================================================
@@ -93,7 +135,10 @@ export const memoRecipients = pgTable("memo_recipients", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   memoId: integer("memo_id").notNull().references(() => memos.id),
   recipientId: integer("recipient_id").notNull().references(() => users.id),
+  groupId: integer("group_id").references(() => groups.id), // penerima grup
+
   isRead: boolean("is_read").default(false),
+  readAt: timestamp("read_at"),
   archived: boolean("archived").default(false),
 });
 
@@ -119,6 +164,8 @@ export const memoAttachments = pgTable("memo_attachments", {
   fileName: varchar("file_name", { length: 255 }).notNull(),
   filePath: text("file_path").notNull(),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  isDeleted: boolean("is_deleted").default(false),
 });
 
 //
@@ -133,27 +180,80 @@ export const memoActions = pgTable("memo_actions", {
   actionType: memoActionEnum("action_type").notNull(),
   remarks: text("remarks"),
   createdAt: timestamp("created_at").defaultNow(),
+
+  // tracking perubahan status
+  previousStatus: memoStatusEnum("previous_status"),
+  newStatus: memoStatusEnum("new_status"),
 });
 
 //
 // =======================================================
-// TYPE INFERENCE UNTUK TIAP TABEL (Opsional tapi disarankan)
+// MEMO COMMENTS TABLE (catatan revisi antar level)
 // =======================================================
 //
+export const memoComments = pgTable("memo_comments", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  memoId: integer("memo_id").notNull().references(() => memos.id),
+  commentedBy: integer("commented_by").notNull().references(() => users.id),
+  comment: text("comment").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+
+// =======================================================
+// ENUM CONSTANTS (untuk type-safe action type di service layer)
+// =======================================================
+export const MemoActionTypeConst = {
+  CREATE: "CREATE",
+  SUBMIT: "SUBMIT",
+  CHECK: "CHECK",
+  APPROVE: "APPROVE",
+  REJECT: "REJECT",
+  ARCHIVE: "ARCHIVE",
+  UNARCHIVE: "UNARCHIVE",
+  REVISE: "REVISE",
+} as const;
+
+export type MemoActionType =
+  (typeof MemoActionTypeConst)[keyof typeof MemoActionTypeConst];
+
+//
+// =======================================================
+// TYPE INFERENCE UNTUK TIAP TABEL
+// =======================================================
+//
+// User
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 
+// Group
+export type Group = typeof groups.$inferSelect;
+export type NewGroup = typeof groups.$inferInsert;
+
+export type GroupMember = typeof groupMembers.$inferSelect;
+export type NewGroupMember = typeof groupMembers.$inferInsert;
+
+// Memo
 export type Memo = typeof memos.$inferSelect;
 export type NewMemo = typeof memos.$inferInsert;
 
+// Recipients
 export type MemoRecipient = typeof memoRecipients.$inferSelect;
 export type NewMemoRecipient = typeof memoRecipients.$inferInsert;
 
+// CC
 export type MemoCC = typeof memoCC.$inferSelect;
 export type NewMemoCC = typeof memoCC.$inferInsert;
 
+// Attachments
 export type MemoAttachment = typeof memoAttachments.$inferSelect;
 export type NewMemoAttachment = typeof memoAttachments.$inferInsert;
 
+// Actions (Log)
 export type MemoAction = typeof memoActions.$inferSelect;
 export type NewMemoAction = typeof memoActions.$inferInsert;
+
+// Comments
+export type MemoComment = typeof memoComments.$inferSelect;
+export type NewMemoComment = typeof memoComments.$inferInsert;
+

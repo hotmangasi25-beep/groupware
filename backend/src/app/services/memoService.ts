@@ -1,72 +1,144 @@
-import * as userRepository from "../repositories/userRepositories";
-import * as memoRepository from "../repositories/memoRepositories";
+import { memoRepository } from "../repositories/memoRepositories";
+import { MemoActionTypeConst } from "../db/schema";
 import * as errorMessage from "../types/constant/errorMessage";
+import { db } from "../db/db";
+import { users } from "../db/schema";
+import { eq } from "drizzle-orm";
 
-export const createMemo = async (memoData: {
-  makerId: number;
-  title: string;
-  content: string;
-  recipients: number[];
-  cc?: number[];
-}) => {
-  // 🔹 Validasi user (ambil user lengkap, termasuk role)
-  const maker = await userRepository.findUserWithRoleByNIP(String(memoData.makerId));
-  if (!maker) {
-    throw new Error(errorMessage.USER_NOT_FOUND);
-  }
+export const memoService = {
+  // Buat memo baru (maker)
+  async createMemo(makerId: number, title: string, content: string){
+    const memo = await memoRepository.createMemo({
+      title,
+      content,
+      makerId,
+      status: "DRAFT"
+    });
 
-  // 🔹 Tentukan alur berdasarkan role
-  let checkerId: number | null = null;
-  let approverId: number | null = null;
-  let status = "DRAFT";
-
-  if (maker.role === "GURU") {
-    const wakasek = await userRepository.findByRole("WAKASEK");
-    const kepsek = await userRepository.findByRole("KEPSEK");
-
-    if (!wakasek || !kepsek) {
-      throw new Error(errorMessage.MAKER_AND_CHECKER_NOT_FOUND);
+    if(!memo){
+      throw new Error(errorMessage.MEMO_NOT_FOUND);
     }
 
-    checkerId = wakasek.id;
-    approverId = kepsek.id;
-    status = "SUBMITTED_TO_CHECKER";
-  } else if (maker.role === "WAKASEK") {
-    const kepsek = await userRepository.findByRole("KEPSEK");
-    if (!kepsek) {
-      throw new Error(errorMessage.APPROVER_NOT_FOUND);
+    await memoRepository.logAction(
+      memo.id,
+      makerId,
+      MemoActionTypeConst.CREATE,
+      "Memo dibuat oleh maker"
+    );
+    return memo;
+  },
+
+  // submit to checker
+  // async submitToChecker(memoId: number, userId: number){
+  //   const memo = await memoRepository.findByMemoId(memoId);
+  //   if(!memo) throw new Error(errorMessage.MEMO_NOT_FOUND);
+  //   if(memo.makerId !== userId) throw new Error(errorMessage.ONLY_MAKER_CAN_SUBMIT);
+    
+  //   await memoRepository.updateMemo(memoId, {
+  //     status: "SUBMITTED_TO_CHECKER",
+  //     currentHandlerId: memo.checkerId ?? null,
+  //   });
+
+  //   await memoRepository.logAction(
+  //     memoId,
+  //     userId,
+  //     MemoActionTypeConst.SUBMIT,
+  //     "Memo dikirim ke checker"
+  //   );
+  // },
+
+  async submitMemo(memoId: number, userId: number){
+    const memo = await memoRepository.findByMemoId(memoId);
+    if(!memo){
+      throw new Error (errorMessage.MEMO_NOT_FOUND);
     }
 
-    approverId = kepsek.id;
-    status = "SUBMITTED_TO_APPROVER";
-  } else if (maker.role === "KEPSEK") {
-    status = "APPROVED";
-  }
+    // ambil data user pembuat untuk mengetahui rolenya
+    const [maker] = await db.select().from(users).where(eq(users.id, memo.makerId));
+    if(!maker){
+      throw new Error("Data pembuat memo tidak ditemukan")
+    }
 
-  // 🔹 Simpan memo utama
-  const newMemo = await memoRepository.createMemo({
-    title: memoData.title,
-    content: memoData.content,
-    makerId: maker.id,
-    checkerId,
-    approverId,
-    status,
-  });
+    let newStatus: string;
+    let logMsg: string;
 
-  // 🔹 Tambahkan recipients
-  await memoRepository.addRecipients(newMemo.id, memoData.recipients);
+    switch(maker.role){
+      case "GURU":
+        newStatus = "SUBMITTED_TO_CHECKER";
+        logMsg = "Memo dikirim ke checker oleh Guru";
+        break;
+      case "WAKASEK":
+        newStatus = "SUBMITTED_TO_APPROVER";
+        logMsg = "Memo dikirim langsung ke approver oleh Wakasek";
+        break;
+      case "KEPSEK":
+        newStatus = "APPROVED";
+        logMsg = "Memo langsung disetujui dan dikirim ke penerima oleh Kepsek";
+        break;
 
-  // 🔹 Tambahkan CC (opsional)
-  if (memoData.cc && memoData.cc.length > 0) {
-    await memoRepository.addCC(newMemo.id, memoData.cc);
-  }
+      default:
+        throw new Error("Role pembuat tidak valid");
+    }
 
-  // 🔹 Catat log aksi
-  await memoRepository.logAction({
-    memoId: newMemo.id,
-    actionBy: maker.id,
-    actionType: "CREATE",
-  });
+    // update memo
+    await memoRepository.updateMemo(memoId, {
+      status: newStatus as any,
+      currentHandlerId: null,
+      submittedAt: new Date(),
+    }),
 
-  return newMemo;
-};
+    // Simpan log
+    await memoRepository.logAction(
+        memoId,
+        userId,
+        MemoActionTypeConst.SUBMIT,
+        logMsg
+      );
+  },
+
+  // Approve Memo
+  async approveMemo(memoId: number, userId: number){
+    const memo = await memoRepository.findByMemoId(memoId);
+    if(!memo) {
+      throw new Error(errorMessage.MEMO_NOT_FOUND);
+    }
+    await memoRepository.updateMemo(memoId, {
+      status: "APPROVED",
+      currentHandlerId: null,
+    });
+
+    await memoRepository.logAction(
+      memoId,
+      userId,
+      MemoActionTypeConst.APPROVE,
+      "Memo Disetujui Oleh Approver"
+    );
+  },
+
+  // Revisi Memo
+  async reviseMemo(memoId: number, userId: number, remarks: string){
+    const memo = await memoRepository.findByMemoId(memoId);
+
+    if(!memo){
+      throw new Error(errorMessage.MEMO_NOT_FOUND);
+    }
+
+    const newStatus = 
+      memo.status === "SUBMITTED_TO_CHECKER"
+      ? "REVISED_BY_CHECKER"
+      : "REVISED_BY_APPROVER";
+
+      await memoRepository.updateMemo(memoId, { status: newStatus });
+      await memoRepository.logAction(
+        memoId,
+        userId,
+        MemoActionTypeConst.REVISE,
+        remarks
+      );
+  },
+
+  // Get semua memo
+  async getAll(){
+    return memoRepository.getAllMemos();
+  },
+}

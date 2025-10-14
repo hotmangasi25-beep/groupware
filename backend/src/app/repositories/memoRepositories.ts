@@ -1,57 +1,57 @@
 import { db } from "../db/db";
-import { memos, memoRecipients, memoCC, memoActions } from "../db/schema";
+import {
+  memos,
+  memoActions,
+  memoRecipients,
+  Memo,
+  NewMemo,
+  MemoActionType,
+} from "../db/schema";
 
-// =======================================================
-// 🔹 CREATE MEMO
-// =======================================================
-export const createMemo = async (data: any) => {
-  const result = await db.insert(memos).values(data).returning();
-  const newMemo = result[0];
+import { eq } from "drizzle-orm";
 
-  // ✅ Tambahkan guard biar tidak mungkin undefined
-  if (!newMemo) {
-    throw new Error("Failed to create memo");
-  }
+export const memoRepository = {
+  // create new memo
+  async createMemo(data: NewMemo): Promise<Memo | undefined> {
+    const [inserted] = await db.insert(memos).values(data).returning();
+    return inserted;
+  },
+  // find by memo ID
+  async findByMemoId(id: number): Promise<Memo | undefined> {
+    const [result] = await db.select().from(memos).where(eq(memos.id, id));
+    return result;
+  },
 
-  return newMemo;
-};
+  // update memo
+  async updateMemo(id: number, data: Partial<Memo>): Promise<void> {
+    await db.update(memos).set(data).where(eq(memos.id, id));
+  },
 
-// =======================================================
-// 🔹 ADD RECIPIENTS
-// =======================================================
-export const addRecipients = async (memoId: number, recipients: number[]) => {
-  if (!recipients || recipients.length === 0) return;
-
-  for (const recipientId of recipients) {
-    await db.insert(memoRecipients).values({
-      memoId,
-      recipientId,
+  // insert action log
+  async logAction(
+    memoId: number,
+    userId: number,
+    actionType: MemoActionType,
+    remarks?: string
+  ) {
+    await db.insert(memoActions).values({
+        memoId,
+        actionBy: userId,
+        actionType,
+        remarks
     });
+  },
+
+  // add recipients
+  async addRecipients(memoId: number, recipientsIds: number[]){
+    if(!recipientsIds.length) return;
+    await db.insert(memoRecipients).values(
+      recipientsIds.map((r) => ({ memoId, recipientId: r }))
+    );
+  },
+
+  // list all memos (for testing)
+  async getAllMemos(): Promise<Memo[]>{
+    return db.select().from(memos);
   }
-};
-
-// =======================================================
-// 🔹 ADD CC
-// =======================================================
-export const addCC = async (memoId: number, ccUserIds: number[]) => {
-  if (!ccUserIds || ccUserIds.length === 0) return;
-
-  for (const ccUserId of ccUserIds) {
-    await db.insert(memoCC).values({
-      memoId,
-      ccUserId,
-    });
-  }
-};
-
-// =======================================================
-// 🔹 LOG ACTION (HISTORY)
-// =======================================================
-export const logAction = async (data: {
-  memoId: number;
-  actionBy: number;
-  actionType: string;
-  remarks?: string;
-}) => {
-  await db.insert(memoActions).values(data);
-};
+}
