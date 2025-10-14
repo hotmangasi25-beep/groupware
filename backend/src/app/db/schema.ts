@@ -15,6 +15,8 @@ import {
 // =======================================================
 //
 
+// test
+
 // 🔹 Enum untuk role user
 export const userRoleEnum = pgEnum("user_role", ["GURU", "WAKASEK", "KEPSEK"]);
 export type UserRole = typeof userRoleEnum.enumValues[number];
