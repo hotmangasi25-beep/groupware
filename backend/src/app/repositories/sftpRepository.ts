@@ -9,7 +9,7 @@ export const sftpRepository = {
                 host: process.env.SFTP_HOST ?? '',
                 port: process.env.SFTP_PORT ? parseInt(process.env.SFTP_PORT, 10) : 22,
                 username: process.env.SFTP_USER ?? '',
-                password: process.env.SFTP_PASS ?? '',
+                password: process.env.SFTP_PASSWORD ?? '',
                 });
                 await sftp.end();
             return { 
