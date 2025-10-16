@@ -1,3 +1,5 @@
+// import jwt from "jsonwebtoken";
+// import bycript from "bcrypt";
 import { db } from "../db/db";
 import { users } from "../db/schema";
 import { eq } from "drizzle-orm";
@@ -5,6 +7,8 @@ import { generateUUID, comparePassword, hashPasswordNew } from "../utils/passwor
 import { generateToken } from "../utils/jwt";
 import * as userRepository from "../repositories/userRepositories";
 import * as errorMessage from "../types/constant/errorMessage";
+
+// const JWT_SECRET = process.env.JWT_SECRET || "super_secret_key";
 
 export const register = async (userData: {
   nip: string;
