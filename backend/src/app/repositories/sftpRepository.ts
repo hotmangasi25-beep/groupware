@@ -12,9 +12,9 @@ export const sftpRepository = {
                 password: process.env.SFTP_PASS ?? '',
                 });
                 await sftp.end();
-                return { 
-                    success: true, message: "Connected successfully"
-                 };
+            return { 
+                success: true, message: "Connected successfully"
+            };
             
         } catch (error: unknown) {
             if(error instanceof Error){
