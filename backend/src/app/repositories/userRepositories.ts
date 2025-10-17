@@ -82,3 +82,13 @@ export const findById = async(id: number) => {
     const result = await db.select().from(users).where(eq(users.id, id));
     result[0];
 };
+
+ // 
+ export const getUsers = async (limit: number, offset: number) => {
+    return await db.select().from(users).limit(limit).offset(offset);
+ };
+
+ export const countUsers = async () => {
+    const result = await db.select({ count: users.id }).from(users);
+    return result.length;
+ };
