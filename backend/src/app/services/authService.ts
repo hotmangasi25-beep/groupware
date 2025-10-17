@@ -8,8 +8,6 @@ import { generateToken } from "../utils/jwt";
 import * as userRepository from "../repositories/userRepositories";
 import * as errorMessage from "../types/constant/errorMessage";
 
-// const JWT_SECRET = process.env.JWT_SECRET || "super_secret_key";
-
 export const register = async (userData: {
   nip: string;
   email: string;
@@ -50,19 +48,31 @@ export const register = async (userData: {
   return { user: newUser, token };
 };
 
-export const findByNIP = async (nip: string) => {
-    try {
-        const result = await db
-            .select()
-            .from(users)
-            .where(eq(users.nip, nip));
+// export const findByNIP = async (nip: string) => {
+//     try {
+//         const result = await db
+//             .select()
+//             .from(users)
+//             .where(eq(users.nip, nip));
 
-        console.log("Query result:", result);
-        return result[0];
-    } catch (err) {
-        console.error("Query error:", err);
-        throw err;
+//         console.log("Query result:", result);
+//         return result[0];
+//     } catch (err) {
+//         console.error("Query error:", err);
+//         throw err;
+//     }
+// };
+export const findByNIP = async (nip: string) => {
+    const result = await db.select().from(users).where(eq(users.nip, nip));
+    const user = result[0];
+
+    if(!user){
+      throw new Error("User not Found");
     }
+
+    // generate token
+    const token = generateToken({ id: user.id, nip: user.nip, role: user.role });
+    return token;
 };
 
 export const changePassword = async (
